@@ -111,12 +111,10 @@ LLM_MODEL = "gemini-1.0-pro"  # Google Generative AI model
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(STORE_DIR, exist_ok=True)
 
-st.set_page_config(page_title="RAG Resume Bot", layout="wide")
-st.title("📄 RAG Resume Bot — bulk PDF resumes → semantic search & QA")
+st.set_page_config(page_title="PDF Chatbot Using RAG", layout="wide")
+st.title("📄 PDF Chatbot Using RAG")
 
-st.markdown(
-    "Upload one or many PDF resumes. The app will extract text, split into chunks, embed, and store in a local FAISS index."
-)
+st.markdown("Upload your PDF and ask questions about its content.")
 
 # ---- Helpers ----
 
@@ -208,104 +206,41 @@ def semantic_search_candidates(vectorstore: SimpleFAISS, name_query: str, k: int
 
 # ---- Streamlit UI ----
 
-st.sidebar.header("Index Controls")
-uploaded_files = st.sidebar.file_uploader("Upload PDF resumes (multiple)", type=["pdf"], accept_multiple_files=True)
-if uploaded_files:
-    if st.sidebar.button("Ingest uploads and update index"):
-        with st.spinner("Saving uploads and extracting text..."):
-            saved_paths = save_uploaded_files(uploaded_files)
-            raw_docs = pdf_to_documents(saved_paths)
-            st.write(f"Loaded {len(raw_docs)} pages from {len(saved_paths)} PDF(s)")
+uploaded_file = st.file_uploader("Upload your PDF", type=["pdf"])
+if uploaded_file:
+    if st.button("Process PDF"):
+        with st.spinner("Processing PDF..."):
+            # Save the file
+            file_path = os.path.join(UPLOAD_DIR, uploaded_file.name)
+            with open(file_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+            # Process
+            raw_docs = pdf_to_documents([file_path])
+            st.write(f"Loaded {len(raw_docs)} pages")
             chunks = chunk_documents(raw_docs)
             st.write(f"Split into {len(chunks)} chunks")
-            with st.spinner("Indexing embeddings (this may take a while)..."):
-                store = create_or_load_vectorstore(chunks)
-                st.success("Index updated and saved to disk.")
-
-if st.sidebar.button("Clear index & uploads (danger)"):
-    if st.sidebar.checkbox("Confirm delete all stored data"):
-        try:
-            shutil.rmtree(STORE_DIR)
-            shutil.rmtree(UPLOAD_DIR)
-            os.makedirs(UPLOAD_DIR, exist_ok=True)
-            os.makedirs(STORE_DIR, exist_ok=True)
-            st.sidebar.success("Cleared index and uploads")
-        except Exception as e:
-            st.sidebar.error(f"Error clearing data: {e}")
+            with st.spinner("Creating embeddings..."):
+                store = SimpleFAISS.from_documents(chunks, get_embedding_client())
+                st.session_state.store = store
+                st.success("PDF processed successfully!")
 
 # Main operations
-st.header("Find a candidate / Ask about resumes")
+st.header("Ask Questions About Your PDF")
 
-# Load index if present
-embeddings_present = os.path.exists(os.path.join(STORE_DIR, "index.faiss"))
-if not embeddings_present:
-    st.info("No index found yet. Upload PDFs in the left sidebar and click 'Ingest uploads and update index'.")
+if 'store' not in st.session_state:
+    st.info("Please upload and process a PDF first.")
+else:
+    query = st.text_input("Ask a question about the PDF", placeholder="e.g. What are the main skills mentioned?")
+    top_k = st.slider("Number of results", min_value=1, max_value=10, value=3)
 
-col1, col2 = st.columns([2, 1])
-with col1:
-    query = st.text_input("Search query / candidate name / question", placeholder="e.g. 'Find candidate Rahim Khan' or 'experience of Priya in Azure'")
-    ask = st.button("Ask")
-
-with col2:
-    name_search_only = st.checkbox("Name-search mode (prioritize name matches)")
-    top_k = st.number_input("Top K results", min_value=1, max_value=20, value=5)
-
-if ask and query:
-    if not embeddings_present:
-        st.error("No index available. Please ingest resumes first.")
-    else:
-        store = SimpleFAISS.load_local(STORE_DIR, get_embedding_client())
-
-        if name_search_only:
-            # Use semantic search but emphasize exact name matches by doing a quick text filter first
-            sem_results = semantic_search_candidates(store, query, k=top_k)
-            # Additionally add exact substring matches from metadata (strong signal for candidate name)
-            exact_hits = []
-            for doc in sem_results:
-                if query.lower() in doc.page_content.lower() or query.lower() in (doc.metadata.get("source_file","") .lower()):
-                    exact_hits.append(doc)
-            results = exact_hits + [d for d in sem_results if d not in exact_hits]
-            results = results[:top_k]
-
-            if not results:
-                st.warning("No candidate-like results found. Try a broader query or uncheck name-search mode.")
-            else:
-                st.success(f"Found {len(results)} relevant chunks")
-                for r in results:
-                    st.markdown("---")
-                    st.write(f"**Source file:** {r.metadata.get('source_file')} | **Page:** {r.metadata.get('page')} | **Chunk:** {r.metadata.get('chunk_id')}")
-                    snippet = r.page_content
-                    st.write(snippet[:1000] + ("..." if len(snippet) > 1000 else ""))
-                    if st.button(f"Open full resume: {r.metadata.get('source_file')}", key=r.metadata.get('chunk_id')):
-                        # Show the entire PDF using streamlit's components
-                        pdf_path = os.path.join(UPLOAD_DIR, r.metadata.get('source_file'))
-                        with open(pdf_path, "rb") as f:
-                            pdf_bytes = f.read()
-                        st.download_button("Download full PDF", data=pdf_bytes, file_name=r.metadata.get('source_file'))
-
-        else:
-            # Retrieval for general queries
-            with st.spinner("Running retrieval..."):
-                docs = store.similarity_search(query, k=top_k)
-                st.markdown("### Retrieved Results")
-                for d in docs:
-                    st.markdown("---")
-                    st.write(f"**Source file:** {d.metadata.get('source_file')} | **Page:** {d.metadata.get('page')} | **Chunk:** {d.metadata.get('chunk_id')}")
-                    snippet = d.page_content
-                    st.write(snippet[:1000] + ("..." if len(snippet) > 1000 else ""))
-
-# Bonus: quick candidate discovery UI
-st.sidebar.header("Quick candidate lookup")
-candidate_name = st.sidebar.text_input("Candidate name to lookup")
-if st.sidebar.button("Find candidate"):
-    if not os.path.exists(os.path.join(STORE_DIR, "index.faiss")):
-        st.sidebar.error("No index found. Ingest PDFs first.")
-    else:
-        store = SimpleFAISS.load_local(STORE_DIR, get_embedding_client())
-        hits = semantic_search_candidates(store, candidate_name, k=int(top_k))
-        st.sidebar.write(f"Found {len(hits)} chunks")
-        for h in hits:
-            st.sidebar.write(f"{h.metadata.get('source_file')} — p{h.metadata.get('page')} — {h.metadata.get('chunk_id')}")
+    if st.button("Ask") and query:
+        with st.spinner("Searching..."):
+            docs = st.session_state.store.similarity_search(query, k=top_k)
+            st.markdown("### Relevant Sections")
+            for d in docs:
+                st.markdown("---")
+                st.write(f"**Page {d.metadata.get('page')}:**")
+                st.write(d.page_content)
 
 st.markdown("---")
 st.caption("This demo stores the FAISS index in a local folder and uses Hugging Face embeddings. For production use, consider secure storage, larger embedding models, and privacy/consent for resume data.")
