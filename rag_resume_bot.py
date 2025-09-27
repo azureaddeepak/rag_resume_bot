@@ -254,7 +254,7 @@ if ask and query:
     if not embeddings_present:
         st.error("No index available. Please ingest resumes first.")
     else:
-        store = FAISS.load_local(STORE_DIR, get_embedding_client())
+        store = SimpleFAISS.load_local(STORE_DIR, get_embedding_client())
 
         if name_search_only:
             # Use semantic search but emphasize exact name matches by doing a quick text filter first
@@ -301,7 +301,7 @@ if st.sidebar.button("Find candidate"):
     if not os.path.exists(os.path.join(STORE_DIR, "index.faiss")):
         st.sidebar.error("No index found. Ingest PDFs first.")
     else:
-        store = FAISS.load_local(STORE_DIR, get_embedding_client())
+        store = SimpleFAISS.load_local(STORE_DIR, get_embedding_client())
         hits = semantic_search_candidates(store, candidate_name, k=int(top_k))
         st.sidebar.write(f"Found {len(hits)} chunks")
         for h in hits:
