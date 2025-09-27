@@ -25,7 +25,7 @@ import shutil
 from typing import List, Optional
 
 import streamlit as st
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.docstore.document import Document
 import faiss
 import numpy as np
@@ -89,7 +89,7 @@ UPLOAD_DIR = "uploads"
 STORE_DIR = "faiss_store"
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 200
-EMBEDDING_MODEL = "models/embedding-001"  # Google Generative AI embedding model
+EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"  # Hugging Face embedding model
 LLM_MODEL = "gemini-1.0-pro"  # Google Generative AI model
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -165,8 +165,8 @@ def chunk_documents(docs: List[Document]) -> List[Document]:
 
 
 def get_embedding_client():
-    """Create a GoogleGenerativeAIEmbeddings object. Make sure GEMINI_API_KEY is set."""
-    return GoogleGenerativeAIEmbeddings(model=EMBEDDING_MODEL, google_api_key=os.getenv("GEMINI_API_KEY"))
+    """Create a HuggingFaceEmbeddings object."""
+    return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
 
 
 def create_or_load_vectorstore(docs: List[Document], persist_directory: str = STORE_DIR) -> SimpleFAISS:
@@ -292,6 +292,6 @@ if st.sidebar.button("Find candidate"):
             st.sidebar.write(f"{h.metadata.get('source_file')} — p{h.metadata.get('page')} — {h.metadata.get('chunk_id')}")
 
 st.markdown("---")
-st.caption("This demo stores the FAISS index in a local folder and uses Google Generative AI embeddings + LLM. For production use, consider secure storage, larger embedding/LLM models, and privacy/consent for resume data.")
+st.caption("This demo stores the FAISS index in a local folder and uses Hugging Face embeddings. For production use, consider secure storage, larger embedding models, and privacy/consent for resume data.")
 
 # EOF
