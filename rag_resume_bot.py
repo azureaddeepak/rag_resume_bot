@@ -25,17 +25,33 @@ import shutil
 from typing import List, Optional
 
 import streamlit as st
-from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.docstore.document import Document
 import faiss
 import numpy as np
 import pickle
 import os
 try:
+    from sentence_transformers import SentenceTransformer
+    SENTENCE_TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    SENTENCE_TRANSFORMERS_AVAILABLE = False
+try:
     from PyPDF2 import PdfReader
     PYPDF2_AVAILABLE = True
 except ImportError:
     PYPDF2_AVAILABLE = False
+
+class SimpleEmbeddings:
+    def __init__(self, model_name):
+        if not SENTENCE_TRANSFORMERS_AVAILABLE:
+            raise ImportError("sentence_transformers not available")
+        self.model = SentenceTransformer(model_name)
+
+    def embed_documents(self, texts):
+        return self.model.encode(texts, show_progress_bar=False).tolist()
+
+    def embed_query(self, text):
+        return self.model.encode([text], show_progress_bar=False)[0].tolist()
 
 class SimpleFAISS:
     def __init__(self, index, texts, embeddings):
@@ -165,8 +181,8 @@ def chunk_documents(docs: List[Document]) -> List[Document]:
 
 
 def get_embedding_client():
-    """Create a HuggingFaceEmbeddings object."""
-    return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+    """Create a SimpleEmbeddings object."""
+    return SimpleEmbeddings(EMBEDDING_MODEL)
 
 
 def create_or_load_vectorstore(docs: List[Document], persist_directory: str = STORE_DIR) -> SimpleFAISS:
