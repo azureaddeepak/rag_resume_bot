@@ -25,11 +25,10 @@ import shutil
 from typing import List, Optional
 
 import streamlit as st
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
-from langchain.vectorstores import FAISS
-from langchain.chains import RetrievalQA
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain.docstore.document import Document
+import faiss
+import numpy as np
 try:
     from PyPDF2 import PdfReader
     PYPDF2_AVAILABLE = True
@@ -90,11 +89,26 @@ def pdf_to_documents(file_paths: List[str]) -> List[Document]:
 
 def chunk_documents(docs: List[Document]) -> List[Document]:
     """Split documents into chunks for embedding. Keeps metadata."""
-    splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
     new_docs: List[Document] = []
     for d in docs:
-        splits = splitter.split_text(d.page_content)
-        for i, chunk in enumerate(splits):
+        text = d.page_content
+        chunks = []
+        start = 0
+        while start < len(text):
+            end = start + CHUNK_SIZE
+            if end < len(text):
+                # Find a good break point
+                break_point = text.rfind(' ', start, end)
+                if break_point == -1:
+                    break_point = end
+                chunk = text[start:break_point]
+                start = break_point + CHUNK_OVERLAP
+            else:
+                chunk = text[start:]
+                start = len(text)
+            if chunk.strip():
+                chunks.append(chunk)
+        for i, chunk in enumerate(chunks):
             metadata = dict(d.metadata)
             metadata["chunk_id"] = f"{metadata.get('source_file','unknown')}_p{metadata.get('page','0')}_c{i}"
             new_docs.append(Document(page_content=chunk, metadata=metadata))
