@@ -46,12 +46,16 @@ class SimpleFAISS:
     @classmethod
     def from_documents(cls, documents, embeddings):
         texts = [doc.page_content for doc in documents]
-        vectors = embeddings.embed_documents(texts)
-        vectors = np.array(vectors).astype('float32')
-        dimension = vectors.shape[1]
-        index = faiss.IndexFlatL2(dimension)
-        index.add(vectors)
-        return cls(index, documents, embeddings)
+        try:
+            vectors = embeddings.embed_documents(texts)
+            vectors = np.array(vectors).astype('float32')
+            dimension = vectors.shape[1]
+            index = faiss.IndexFlatL2(dimension)
+            index.add(vectors)
+            return cls(index, documents, embeddings)
+        except Exception as e:
+            st.error(f"Embedding failed: {e}")
+            raise
 
     def add_documents(self, documents):
         texts = [doc.page_content for doc in documents]
