@@ -239,8 +239,22 @@ else:
             st.markdown("### Relevant Sections")
             for d in docs:
                 st.markdown("---")
+                content = d.page_content
+                if "skill" in query.lower():
+                    # Extract skills section
+                    lines = content.split('\n')
+                    skills_lines = []
+                    in_skills = False
+                    for line in lines:
+                        if "Skills" in line or "Certifications" in line:
+                            in_skills = True
+                        if in_skills:
+                            skills_lines.append(line)
+                            if line.strip() == "" and len(skills_lines) > 1:
+                                break  # Stop after skills section
+                    content = '\n'.join(skills_lines)
                 st.write(f"**Page {d.metadata.get('page')}:**")
-                st.write(d.page_content)
+                st.write(content)
 
 st.markdown("---")
 st.caption("This demo stores the FAISS index in a local folder and uses Hugging Face embeddings. For production use, consider secure storage, larger embedding models, and privacy/consent for resume data.")
