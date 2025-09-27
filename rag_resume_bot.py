@@ -26,6 +26,7 @@ from typing import List, Optional
 
 import streamlit as st
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from langchain.vectorstores import FAISS
 from langchain.docstore.document import Document
 import faiss
 import numpy as np
