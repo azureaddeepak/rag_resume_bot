@@ -6,7 +6,7 @@ Single-file Streamlit app that lets a user upload bulk PDF resumes, builds a FAI
 particular candidates and ask questions about resumes.
 
 Requirements (pip):
-  pip install streamlit langchain faiss-cpu langchain-google-genai pypdf
+  pip install streamlit langchain faiss-cpu langchain-google-genai PyPDF2
 
 How to run:
   1. Set environment variable GEMINI_API_KEY (or create a .env file with GEMINI_API_KEY=...)
@@ -25,12 +25,16 @@ import shutil
 from typing import List, Optional
 
 import streamlit as st
-from langchain.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 from langchain.vectorstores import FAISS
 from langchain.chains import RetrievalQA
 from langchain.docstore.document import Document
+try:
+    from PyPDF2 import PdfReader
+    PYPDF2_AVAILABLE = True
+except ImportError:
+    PYPDF2_AVAILABLE = False
 
 # Config
 UPLOAD_DIR = "uploads"
@@ -64,17 +68,21 @@ def save_uploaded_files(uploaded_files) -> List[str]:
 
 
 def pdf_to_documents(file_paths: List[str]) -> List[Document]:
-    """Load PDFs to LangChain Document objects, adding metadata with source filename and page."""
+    """Load PDFs to LangChain Document objects using PyPDF2, adding metadata with source filename and page."""
     docs: List[Document] = []
+    if not PYPDF2_AVAILABLE:
+        st.error("PyPDF2 not available. Please install PyPDF2.")
+        return docs
     for path in file_paths:
         try:
-            loader = PyPDFLoader(path)
-            pages = loader.load_and_split()
-            # Each page is already a Document with page content. Add filename to metadata.
-            for i, p in enumerate(pages, start=1):
-                p.metadata["source_file"] = os.path.basename(path)
-                p.metadata["page"] = i
-                docs.append(p)
+            reader = PdfReader(path)
+            for i, page in enumerate(reader.pages, start=1):
+                text = page.extract_text()
+                if text.strip():
+                    docs.append(Document(
+                        page_content=text,
+                        metadata={"source_file": os.path.basename(path), "page": i}
+                    ))
         except Exception as e:
             st.warning(f"Failed to load {path}: {e}")
     return docs
