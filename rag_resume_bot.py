@@ -231,7 +231,7 @@ if 'store' not in st.session_state:
     st.info("Please upload and process a PDF first.")
 else:
     query = st.text_input("Ask a question about the PDF", placeholder="e.g. What are the main skills mentioned?")
-    top_k = st.slider("Number of results", min_value=1, max_value=10, value=3)
+    top_k = 3  # Fixed number of results
 
     if st.button("Ask") and query:
         with st.spinner("Searching..."):
@@ -241,18 +241,24 @@ else:
                 st.markdown("---")
                 content = d.page_content
                 if "skill" in query.lower():
-                    # Extract skills section
+                    # Extract and format skills
                     lines = content.split('\n')
-                    skills_lines = []
+                    skills = []
                     in_skills = False
                     for line in lines:
-                        if "Skills" in line or "Certifications" in line:
+                        if "Skills" in line:
                             in_skills = True
+                            continue
                         if in_skills:
-                            skills_lines.append(line)
-                            if line.strip() == "" and len(skills_lines) > 1:
-                                break  # Stop after skills section
-                    content = '\n'.join(skills_lines)
+                            if line.strip() == "" or "Certifications" in line:
+                                break
+                            # Split by common separators
+                            parts = line.replace(',', ' ').replace('(', ' ').replace(')', ' ').split()
+                            skills.extend([p.strip() for p in parts if p.strip() and len(p) > 2])
+                    if skills:
+                        content = "Skills mentioned:\n" + '\n'.join(f"- {skill}" for skill in set(skills))
+                    else:
+                        content = "No specific skills extracted."
                 st.write(f"**Page {d.metadata.get('page')}:**")
                 st.write(content)
 
