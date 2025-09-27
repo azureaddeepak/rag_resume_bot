@@ -166,7 +166,7 @@ def chunk_documents(docs: List[Document]) -> List[Document]:
 
 def get_embedding_client():
     """Create a GoogleGenerativeAIEmbeddings object. Make sure GEMINI_API_KEY is set."""
-    return GoogleGenerativeAIEmbeddings(model=EMBEDDING_MODEL)
+    return GoogleGenerativeAIEmbeddings(model=EMBEDDING_MODEL, google_api_key=os.getenv("GEMINI_API_KEY"))
 
 
 def create_or_load_vectorstore(docs: List[Document], persist_directory: str = STORE_DIR) -> SimpleFAISS:
