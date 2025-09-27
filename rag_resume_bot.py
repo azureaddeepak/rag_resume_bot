@@ -26,15 +26,59 @@ from typing import List, Optional
 
 import streamlit as st
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain.vectorstores import FAISS
 from langchain.docstore.document import Document
 import faiss
 import numpy as np
+import pickle
+import os
 try:
     from PyPDF2 import PdfReader
     PYPDF2_AVAILABLE = True
 except ImportError:
     PYPDF2_AVAILABLE = False
+
+class SimpleFAISS:
+    def __init__(self, index, texts, embeddings):
+        self.index = index
+        self.texts = texts
+        self.embeddings = embeddings
+
+    @classmethod
+    def from_documents(cls, documents, embeddings):
+        texts = [doc.page_content for doc in documents]
+        vectors = embeddings.embed_documents(texts)
+        vectors = np.array(vectors).astype('float32')
+        dimension = vectors.shape[1]
+        index = faiss.IndexFlatL2(dimension)
+        index.add(vectors)
+        return cls(index, documents, embeddings)
+
+    def add_documents(self, documents):
+        texts = [doc.page_content for doc in documents]
+        vectors = self.embeddings.embed_documents(texts)
+        vectors = np.array(vectors).astype('float32')
+        self.index.add(vectors)
+        self.texts.extend(documents)
+
+    def similarity_search(self, query, k=5):
+        query_vec = self.embeddings.embed_query(query)
+        query_vec = np.array([query_vec]).astype('float32')
+        distances, indices = self.index.search(query_vec, k)
+        results = [self.texts[i] for i in indices[0]]
+        return results
+
+    def save_local(self, folder_path):
+        os.makedirs(folder_path, exist_ok=True)
+        faiss.write_index(self.index, os.path.join(folder_path, "index.faiss"))
+        with open(os.path.join(folder_path, "texts.pkl"), "wb") as f:
+            pickle.dump(self.texts, f)
+
+    @classmethod
+    def load_local(cls, folder_path, embeddings):
+        index = faiss.read_index(os.path.join(folder_path, "index.faiss"))
+        with open(os.path.join(folder_path, "texts.pkl"), "rb") as f:
+            texts = pickle.load(f)
+        return cls(index, texts, embeddings)
 
 # Config
 UPLOAD_DIR = "uploads"
@@ -121,34 +165,25 @@ def get_embedding_client():
     return GoogleGenerativeAIEmbeddings(model=EMBEDDING_MODEL)
 
 
-def create_or_load_vectorstore(docs: List[Document], persist_directory: str = STORE_DIR) -> FAISS:
+def create_or_load_vectorstore(docs: List[Document], persist_directory: str = STORE_DIR) -> SimpleFAISS:
     """Create or update a FAISS index with passed documents. If an index exists, it will be loaded and extended."""
     embeddings = get_embedding_client()
     if os.path.exists(os.path.join(persist_directory, "index.faiss")):
         # load existing store and add docs
-        store = FAISS.load_local(persist_directory, embeddings)
+        store = SimpleFAISS.load_local(persist_directory, embeddings)
         if docs:
             store.add_documents(docs)
             store.save_local(persist_directory)
         return store
     else:
-        store = FAISS.from_documents(docs, embeddings)
+        store = SimpleFAISS.from_documents(docs, embeddings)
         store.save_local(persist_directory)
         return store
 
 
-def build_qa_chain(vectorstore: FAISS):
-    """Build a RetrievalQA chain using Google Generative AI LLM and the provided vectorstore retriever."""
-    retriever = vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 5})
-    llm = ChatGoogleGenerativeAI(model=LLM_MODEL, temperature=0.0)
-    qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff", retriever=retriever, return_source_documents=True)
-    return qa
-
-
-def semantic_search_candidates(vectorstore: FAISS, name_query: str, k: int = 5) -> List[Document]:
+def semantic_search_candidates(vectorstore: SimpleFAISS, name_query: str, k: int = 5) -> List[Document]:
     """Run a semantic search for candidate name queries and return matching Document chunks (with metadata)."""
-    retriever = vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": k})
-    return retriever.get_relevant_documents(name_query)
+    return vectorstore.similarity_search(name_query, k)
 
 
 # ---- Streamlit UI ----
@@ -229,27 +264,15 @@ if ask and query:
                         st.download_button("Download full PDF", data=pdf_bytes, file_name=r.metadata.get('source_file'))
 
         else:
-            # Retrieval QA for general queries
-            qa = build_qa_chain(store)
-            with st.spinner("Running retrieval + LLM..."):
-                try:
-                    resp = qa(query)
-                    answer = resp.get("result") if isinstance(resp, dict) else str(resp)
-                    st.markdown("### Answer")
-                    st.write(answer)
-                except Exception as e:
-                    st.error(f"LLM failed: {e}. Showing retrieved context instead.")
-                    # Fallback to show retrieved documents
-                    docs = store.similarity_search(query, k=top_k)
-                    st.markdown("### Retrieved Context")
-                    for d in docs:
-                        st.write(f"**{d.metadata.get('source_file')} (page {d.metadata.get('page')})**")
-                        st.write(d.page_content[:500] + ("..." if len(d.page_content) > 500 else ""))
-
-            st.markdown("### Source chunks used")
-            src_docs = resp.get("source_documents", []) if isinstance(resp, dict) and 'resp' in locals() else []
-            for d in src_docs:
-                st.write(f"- {d.metadata.get('source_file')} (page {d.metadata.get('page')}) — {d.metadata.get('chunk_id')}")
+            # Retrieval for general queries
+            with st.spinner("Running retrieval..."):
+                docs = store.similarity_search(query, k=top_k)
+                st.markdown("### Retrieved Results")
+                for d in docs:
+                    st.markdown("---")
+                    st.write(f"**Source file:** {d.metadata.get('source_file')} | **Page:** {d.metadata.get('page')} | **Chunk:** {d.metadata.get('chunk_id')}")
+                    snippet = d.page_content
+                    st.write(snippet[:1000] + ("..." if len(snippet) > 1000 else ""))
 
 # Bonus: quick candidate discovery UI
 st.sidebar.header("Quick candidate lookup")
