@@ -231,7 +231,7 @@ if 'store' not in st.session_state:
     st.info("Please upload and process a PDF first.")
 else:
     query = st.text_input("Ask a question about the PDF", placeholder="e.g. What are the main skills mentioned?")
-    top_k = 3  # Fixed number of results
+    top_k = 1  # Fixed number of results
 
     if st.button("Ask") and query:
         with st.spinner("Searching..."):
