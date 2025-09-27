@@ -1,5 +1,5 @@
 streamlit
 faiss-cpu
 langchain
-langchain-google-genai
+sentence-transformers
 PyPDF2
