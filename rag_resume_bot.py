@@ -6,7 +6,7 @@ Single-file Streamlit app that lets a user upload bulk PDF resumes, builds a FAI
 particular candidates and ask questions about resumes.
 
 Requirements (pip):
-  pip install streamlit langchain faiss-cpu langchain-google-genai PyPDF2
+  pip install streamlit langchain faiss-cpu langchain-google-genai pypdf
 
 How to run:
   1. Set environment variable GEMINI_API_KEY (or create a .env file with GEMINI_API_KEY=...)
